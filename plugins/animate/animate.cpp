@@ -20,22 +20,22 @@
 #include "wayfire/view.hpp"
 #include <wayfire/matcher.hpp>
 
-void animation_base::init(wayfire_view, wf::animation_description_t, wf_animation_type)
+void wf::animate::animation_base::init(wayfire_view, wf::animation_description_t, animation_type)
 {}
-bool animation_base::step()
+bool wf::animate::animation_base::step()
 {
     return false;
 }
 
-void animation_base::reverse()
+void wf::animate::animation_base::reverse()
 {}
 
-int animation_base::get_direction()
+int wf::animate::animation_base::get_direction()
 {
     return 1;
 }
 
-animation_base::~animation_base()
+wf::animate::animation_base::~animation_base()
 {}
 
 static constexpr const char *animate_custom_data_fire     = "animation-hook-fire";
@@ -52,7 +52,7 @@ static constexpr int SHOWN  = 1;
 struct animation_hook_base : public wf::custom_data_t
 {
     virtual void stop_hook(bool) = 0;
-    virtual void reverse(wf_animation_type) = 0;
+    virtual void reverse(wf::animate::animation_type) = 0;
     virtual int get_direction() = 0;
 
     animation_hook_base() = default;
@@ -66,14 +66,14 @@ struct animation_hook_base : public wf::custom_data_t
 template<class animation_t>
 struct animation_hook : public animation_hook_base
 {
-    static_assert(std::is_base_of<animation_base, animation_t>::value,
+    static_assert(std::is_base_of<wf::animate::animation_base, animation_t>::value,
         "animation_type must be derived from animation_base!");
 
     std::shared_ptr<wf::view_interface_t> view;
-    wf_animation_type type;
+    wf::animate::animation_type type;
     std::string name;
     wf::output_t *current_output = nullptr;
-    std::unique_ptr<animation_base> animation;
+    std::unique_ptr<wf::animate::animation_base> animation;
     std::shared_ptr<wf::unmapped_view_snapshot_node> unmapped_contents;
 
     void damage_whole_view()
@@ -123,7 +123,7 @@ struct animation_hook : public animation_hook_base
         set_output(view->get_output());
     };
 
-    animation_hook(wayfire_view view, wf::animation_description_t duration, wf_animation_type type,
+    animation_hook(wayfire_view view, wf::animation_description_t duration, wf::animate::animation_type type,
         std::string name)
     {
         this->type = type;
@@ -139,7 +139,7 @@ struct animation_hook : public animation_hook_base
         view->connect(&on_set_output);
         wf::scene::set_node_enabled(view->get_root_node(), true);
 
-        if (type == ANIMATION_TYPE_UNMAP)
+        if (type == wf::animate::ANIMATION_TYPE_UNMAP)
         {
             set_unmapped_contents();
         }
@@ -180,9 +180,9 @@ struct animation_hook : public animation_hook_base
         }
     }
 
-    void reverse(wf_animation_type type) override
+    void reverse(wf::animate::animation_type type) override
     {
-        if (type == ANIMATION_TYPE_UNMAP)
+        if (type == wf::animate::ANIMATION_TYPE_UNMAP)
         {
             set_unmapped_contents();
         } else
@@ -342,7 +342,7 @@ class wayfire_animation : public wf::plugin_interface_t, private wf::per_output_
         return {"none", wf::animation_description_t{0, {}, ""}};
     }
 
-    bool try_reverse(wayfire_view view, wf_animation_type type, std::string name,
+    bool try_reverse(wayfire_view view, wf::animate::animation_type type, std::string name,
         int visibility)
     {
         visibility = !visibility;
@@ -361,11 +361,11 @@ class wayfire_animation : public wf::plugin_interface_t, private wf::per_output_
 
     template<class animation_t>
     void set_animation(wayfire_view view,
-        wf_animation_type type, wf::animation_description_t duration, std::string name)
+        wf::animate::animation_type type, wf::animation_description_t duration, std::string name)
     {
         name = "animation-hook-" + name;
 
-        if (type == ANIMATION_TYPE_MAP)
+        if (type == wf::animate::ANIMATION_TYPE_MAP)
         {
             if (try_reverse(view, type, name, SHOWN))
             {
@@ -376,7 +376,7 @@ class wayfire_animation : public wf::plugin_interface_t, private wf::per_output_
             view->store_data(
                 std::make_unique<animation_hook<animation_t>>(view, duration, type,
                     name), name);
-        } else if (type == ANIMATION_TYPE_UNMAP)
+        } else if (type == wf::animate::ANIMATION_TYPE_UNMAP)
         {
             if (try_reverse(view, type, name, HIDDEN))
             {
@@ -387,7 +387,7 @@ class wayfire_animation : public wf::plugin_interface_t, private wf::per_output_
             view->store_data(
                 std::make_unique<animation_hook<animation_t>>(view, duration, type,
                     name), name);
-        } else if (type & MINIMIZE_STATE_ANIMATION)
+        } else if (type & WF_ANIMATE_MINIMIZE_STATE_ANIMATION)
         {
             if (view->has_data(animate_custom_data_minimize))
             {
@@ -410,23 +410,23 @@ class wayfire_animation : public wf::plugin_interface_t, private wf::per_output_
 
         if (animation.animation_name == "fade")
         {
-            set_animation<fade_animation>(ev->view, ANIMATION_TYPE_MAP,
+            set_animation<fade_animation>(ev->view, wf::animate::ANIMATION_TYPE_MAP,
                 animation.duration, animation.animation_name);
         } else if (animation.animation_name == "zoom")
         {
-            set_animation<zoom_animation>(ev->view, ANIMATION_TYPE_MAP,
+            set_animation<zoom_animation>(ev->view, wf::animate::ANIMATION_TYPE_MAP,
                 animation.duration, animation.animation_name);
         } else if (animation.animation_name == "fire")
         {
-            set_animation<FireAnimation>(ev->view, ANIMATION_TYPE_MAP,
+            set_animation<FireAnimation>(ev->view, wf::animate::ANIMATION_TYPE_MAP,
                 animation.duration, animation.animation_name);
         } else if (animation.animation_name == "zap")
         {
-            set_animation<wf::zap::zap_animation>(ev->view, ANIMATION_TYPE_MAP,
+            set_animation<wf::zap::zap_animation>(ev->view, wf::animate::ANIMATION_TYPE_MAP,
                 animation.duration, animation.animation_name);
         } else if (animation.animation_name == "spin")
         {
-            set_animation<wf::spin::spin_animation>(ev->view, ANIMATION_TYPE_MAP,
+            set_animation<wf::spin::spin_animation>(ev->view, wf::animate::ANIMATION_TYPE_MAP,
                 animation.duration, animation.animation_name);
         }
     };
@@ -438,23 +438,23 @@ class wayfire_animation : public wf::plugin_interface_t, private wf::per_output_
 
         if (animation.animation_name == "fade")
         {
-            set_animation<fade_animation>(ev->view, ANIMATION_TYPE_UNMAP,
+            set_animation<fade_animation>(ev->view, wf::animate::ANIMATION_TYPE_UNMAP,
                 animation.duration, animation.animation_name);
         } else if (animation.animation_name == "zoom")
         {
-            set_animation<zoom_animation>(ev->view, ANIMATION_TYPE_UNMAP,
+            set_animation<zoom_animation>(ev->view, wf::animate::ANIMATION_TYPE_UNMAP,
                 animation.duration, animation.animation_name);
         } else if (animation.animation_name == "fire")
         {
-            set_animation<FireAnimation>(ev->view, ANIMATION_TYPE_UNMAP,
+            set_animation<FireAnimation>(ev->view, wf::animate::ANIMATION_TYPE_UNMAP,
                 animation.duration, animation.animation_name);
         } else if (animation.animation_name == "zap")
         {
-            set_animation<wf::zap::zap_animation>(ev->view, ANIMATION_TYPE_UNMAP,
+            set_animation<wf::zap::zap_animation>(ev->view, wf::animate::ANIMATION_TYPE_UNMAP,
                 animation.duration, animation.animation_name);
         } else if (animation.animation_name == "spin")
         {
-            set_animation<wf::spin::spin_animation>(ev->view, ANIMATION_TYPE_UNMAP,
+            set_animation<wf::spin::spin_animation>(ev->view, wf::animate::ANIMATION_TYPE_UNMAP,
                 animation.duration, animation.animation_name);
         }
     };
@@ -466,24 +466,24 @@ class wayfire_animation : public wf::plugin_interface_t, private wf::per_output_
         {
             if (std::string(minimize_animation) == "squeezimize")
             {
-                set_animation<wf::squeezimize::squeezimize_animation>(ev->view, ANIMATION_TYPE_MINIMIZE,
+                set_animation<wf::squeezimize::squeezimize_animation>(ev->view, wf::animate::ANIMATION_TYPE_MINIMIZE,
                     default_duration,
                     "minimize");
             } else if (std::string(minimize_animation) == "zoom")
             {
-                set_animation<zoom_animation>(ev->view, ANIMATION_TYPE_MINIMIZE, default_duration,
+                set_animation<zoom_animation>(ev->view, wf::animate::ANIMATION_TYPE_MINIMIZE, default_duration,
                     "minimize");
             }
         } else
         {
             if (std::string(minimize_animation) == "squeezimize")
             {
-                set_animation<wf::squeezimize::squeezimize_animation>(ev->view, ANIMATION_TYPE_RESTORE,
+                set_animation<wf::squeezimize::squeezimize_animation>(ev->view, wf::animate::ANIMATION_TYPE_RESTORE,
                     default_duration,
                     "minimize");
             } else if (std::string(minimize_animation) == "zoom")
             {
-                set_animation<zoom_animation>(ev->view, ANIMATION_TYPE_RESTORE, default_duration,
+                set_animation<zoom_animation>(ev->view, wf::animate::ANIMATION_TYPE_RESTORE, default_duration,
                     "minimize");
             }
         }

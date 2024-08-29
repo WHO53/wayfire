@@ -313,12 +313,12 @@ class squeezimize_transformer : public wf::scene::view_2d_transformer_t
     }
 };
 
-class squeezimize_animation : public animation_base
+class squeezimize_animation : public animate::animation_base
 {
     wayfire_view view;
 
   public:
-    void init(wayfire_view view, wf::animation_description_t dur, wf_animation_type type) override
+    void init(wayfire_view view, wf::animation_description_t dur, animate::animation_type type) override
     {
         this->view = view;
         pop_transformer(view);
@@ -329,7 +329,7 @@ class squeezimize_animation : public animation_base
         auto tmgr = view->get_transformed_node();
         auto node = std::make_shared<wf::squeezimize::squeezimize_transformer>(view, hint, bbox);
         tmgr->add_transformer(node, wf::TRANSFORMER_HIGHLEVEL + 1, squeezimize_transformer_name);
-        node->init_animation(type & HIDING_ANIMATION);
+        node->init_animation(type & WF_ANIMATE_HIDING_ANIMATION);
     }
 
     void pop_transformer(wayfire_view view)
