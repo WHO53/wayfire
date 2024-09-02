@@ -6,6 +6,7 @@
 #include <type_traits>
 #include <wayfire/core.hpp>
 #include "animate.hpp"
+#include "plugins/common/wayfire/plugins/common/shared-core-data.hpp"
 #include "system_fade.hpp"
 #include "basic_animations.hpp"
 #include "squeezimize.hpp"
@@ -19,6 +20,16 @@
 #include "wayfire/signal-provider.hpp"
 #include "wayfire/view.hpp"
 #include <wayfire/matcher.hpp>
+
+void wf::animate::animate_effects_registry_t::register_effect(std::string name, effect_description_t effect)
+{
+    effects[name] = effect;
+}
+
+void wf::animate::animate_effects_registry_t::unregister_effect(std::string name)
+{
+    effects.erase(name);
+}
 
 void wf::animate::animation_base::init(wayfire_view, wf::animation_description_t, animation_type)
 {}
@@ -63,12 +74,8 @@ struct animation_hook_base : public wf::custom_data_t
     animation_hook_base& operator =(animation_hook_base&&) = default;
 };
 
-template<class animation_t>
 struct animation_hook : public animation_hook_base
 {
-    static_assert(std::is_base_of<wf::animate::animation_base, animation_t>::value,
-        "animation_type must be derived from animation_base!");
-
     std::shared_ptr<wf::view_interface_t> view;
     wf::animate::animation_type type;
     std::string name;
@@ -123,14 +130,17 @@ struct animation_hook : public animation_hook_base
         set_output(view->get_output());
     };
 
-    animation_hook(wayfire_view view, wf::animation_description_t duration, wf::animate::animation_type type,
+    animation_hook(wayfire_view view,
+        std::unique_ptr<wf::animate::animation_base> animation,
+        wf::animation_description_t duration,
+        wf::animate::animation_type type,
         std::string name)
     {
         this->type = type;
         this->view = view->shared_from_this();
         this->name = name;
 
-        animation = std::make_unique<animation_t>();
+        this->animation = std::move(animation);
         animation->init(view, duration, type);
 
         set_output(view->get_output());
@@ -283,10 +293,28 @@ class wayfire_animation : public wf::plugin_interface_t, private wf::per_output_
     wf::view_matcher_t zoom_enabled_for{"animate/zoom_enabled_for"};
     wf::view_matcher_t fire_enabled_for{"animate/fire_enabled_for"};
 
+    wf::shared_data::ref_ptr_t<wf::animate::animate_effects_registry_t> effects_registry;
+
+    template<class animation_t>
+    void register_effect(std::string name)
+    {
+        effects_registry->register_effect(name, wf::animate::effect_description_t{
+            .generator = [] { return std::make_unique<animation_t>(); },
+            .transformer_name = "animation-hook-" + name,
+        });
+    }
+
   public:
     void init() override
     {
         init_output_tracking();
+
+        register_effect<fade_animation>("fade");
+        register_effect<zoom_animation>("zoom");
+        register_effect<FireAnimation>("fire");
+        register_effect<wf::zap::zap_animation>("zap");
+        register_effect<wf::spin::spin_animation>("spin");
+        register_effect<wf::squeezimize::squeezimize_animation>("squeezimize");
     }
 
     void handle_new_output(wf::output_t *output) override
@@ -305,6 +333,13 @@ class wayfire_animation : public wf::plugin_interface_t, private wf::per_output_
     void fini() override
     {
         cleanup_views_on_output(nullptr);
+
+        effects_registry->unregister_effect("fade");
+        effects_registry->unregister_effect("zoom");
+        effects_registry->unregister_effect("fire");
+        effects_registry->unregister_effect("zap");
+        effects_registry->unregister_effect("spin");
+        effects_registry->unregister_effect("squeezimize");
     }
 
     struct view_animation_t
@@ -359,35 +394,13 @@ class wayfire_animation : public wf::plugin_interface_t, private wf::per_output_
         return false;
     }
 
-    template<class animation_t>
-    void set_animation(wayfire_view view,
-        wf::animate::animation_type type, wf::animation_description_t duration, std::string name)
+    void set_animation(wayfire_view view, std::string animation_name,
+        wf::animate::animation_type type, wf::animation_description_t duration,
+        int is_shown)
     {
-        name = "animation-hook-" + name;
-
         if (type == wf::animate::ANIMATION_TYPE_MAP)
-        {
-            if (try_reverse(view, type, name, SHOWN))
-            {
-                return;
-            }
-
-            auto animation = get_animation_for_view(open_animation, view);
-            view->store_data(
-                std::make_unique<animation_hook<animation_t>>(view, duration, type,
-                    name), name);
-        } else if (type == wf::animate::ANIMATION_TYPE_UNMAP)
-        {
-            if (try_reverse(view, type, name, HIDDEN))
-            {
-                return;
-            }
-
-            auto animation = get_animation_for_view(close_animation, view);
-            view->store_data(
-                std::make_unique<animation_hook<animation_t>>(view, duration, type,
-                    name), name);
-        } else if (type & WF_ANIMATE_MINIMIZE_STATE_ANIMATION)
+        {} else if (type == wf::animate::ANIMATION_TYPE_UNMAP)
+        {} else if (type & WF_ANIMATE_MINIMIZE_STATE_ANIMATION)
         {
             if (view->has_data(animate_custom_data_minimize))
             {
@@ -401,62 +414,48 @@ class wayfire_animation : public wf::plugin_interface_t, private wf::per_output_
                     animate_custom_data_minimize),
                 animate_custom_data_minimize);
         }
+
+        auto animation = get_animation_for_view(open_animation, ev->view);
+        if (!effects_registry->effects.count(animation.animation_name))
+        {
+            LOGE("Unknown animation type: {}", animation.animation_name);
+            return;
+        }
+
+        auto& effect = effects_registry->effects[animation.animation_name];
+        if (try_reverse(ev->view, animation_type, effect.cdata_name, is_shown))
+        {
+            return;
+        }
+
+        auto hook = std::make_unique<animation_hook>(ev->view, effect.generator(),
+            animation.duration, animation_type, effect.cdata_name);
+        ev->view->store_data(std::move(hook), effect.cdata_name);
     }
 
     /* TODO: enhance - add more animations */
     wf::signal::connection_t<wf::view_mapped_signal> on_view_mapped = [=] (wf::view_mapped_signal *ev)
-    {
-        auto animation = get_animation_for_view(open_animation, ev->view);
-
-        if (animation.animation_name == "fade")
-        {
-            set_animation<fade_animation>(ev->view, wf::animate::ANIMATION_TYPE_MAP,
-                animation.duration, animation.animation_name);
-        } else if (animation.animation_name == "zoom")
-        {
-            set_animation<zoom_animation>(ev->view, wf::animate::ANIMATION_TYPE_MAP,
-                animation.duration, animation.animation_name);
-        } else if (animation.animation_name == "fire")
-        {
-            set_animation<FireAnimation>(ev->view, wf::animate::ANIMATION_TYPE_MAP,
-                animation.duration, animation.animation_name);
-        } else if (animation.animation_name == "zap")
-        {
-            set_animation<wf::zap::zap_animation>(ev->view, wf::animate::ANIMATION_TYPE_MAP,
-                animation.duration, animation.animation_name);
-        } else if (animation.animation_name == "spin")
-        {
-            set_animation<wf::spin::spin_animation>(ev->view, wf::animate::ANIMATION_TYPE_MAP,
-                animation.duration, animation.animation_name);
-        }
-    };
+    {};
 
     wf::signal::connection_t<wf::view_pre_unmap_signal> on_view_pre_unmap =
         [=] (wf::view_pre_unmap_signal *ev)
     {
         auto animation = get_animation_for_view(close_animation, ev->view);
-
-        if (animation.animation_name == "fade")
+        if (!effects_registry->effects.count(animation.animation_name))
         {
-            set_animation<fade_animation>(ev->view, wf::animate::ANIMATION_TYPE_UNMAP,
-                animation.duration, animation.animation_name);
-        } else if (animation.animation_name == "zoom")
-        {
-            set_animation<zoom_animation>(ev->view, wf::animate::ANIMATION_TYPE_UNMAP,
-                animation.duration, animation.animation_name);
-        } else if (animation.animation_name == "fire")
-        {
-            set_animation<FireAnimation>(ev->view, wf::animate::ANIMATION_TYPE_UNMAP,
-                animation.duration, animation.animation_name);
-        } else if (animation.animation_name == "zap")
-        {
-            set_animation<wf::zap::zap_animation>(ev->view, wf::animate::ANIMATION_TYPE_UNMAP,
-                animation.duration, animation.animation_name);
-        } else if (animation.animation_name == "spin")
-        {
-            set_animation<wf::spin::spin_animation>(ev->view, wf::animate::ANIMATION_TYPE_UNMAP,
-                animation.duration, animation.animation_name);
+            LOGE("Unknown animation type: {}", animation.animation_name);
+            return;
         }
+
+        auto& effect = effects_registry->effects[animation.animation_name];
+        if (try_reverse(ev->view, wf::animate::ANIMATION_TYPE_UNMAP, effect.cdata_name, HIDDEN))
+        {
+            return;
+        }
+
+        auto hook = std::make_unique<animation_hook>(ev->view, effect.generator(),
+            animation.duration, wf::animate::ANIMATION_TYPE_UNMAP, effect.cdata_name);
+        ev->view->store_data(std::move(hook), effect.cdata_name);
     };
 
     wf::signal::connection_t<wf::view_minimize_request_signal> on_minimize_request =
@@ -466,19 +465,22 @@ class wayfire_animation : public wf::plugin_interface_t, private wf::per_output_
         {
             if (std::string(minimize_animation) == "squeezimize")
             {
-                set_animation<wf::squeezimize::squeezimize_animation>(ev->view, wf::animate::ANIMATION_TYPE_MINIMIZE,
+                set_animation<wf::squeezimize::squeezimize_animation>(ev->view,
+                    wf::animate::ANIMATION_TYPE_MINIMIZE,
                     default_duration,
                     "minimize");
             } else if (std::string(minimize_animation) == "zoom")
             {
-                set_animation<zoom_animation>(ev->view, wf::animate::ANIMATION_TYPE_MINIMIZE, default_duration,
+                set_animation<zoom_animation>(ev->view, wf::animate::ANIMATION_TYPE_MINIMIZE,
+                    default_duration,
                     "minimize");
             }
         } else
         {
             if (std::string(minimize_animation) == "squeezimize")
             {
-                set_animation<wf::squeezimize::squeezimize_animation>(ev->view, wf::animate::ANIMATION_TYPE_RESTORE,
+                set_animation<wf::squeezimize::squeezimize_animation>(ev->view,
+                    wf::animate::ANIMATION_TYPE_RESTORE,
                     default_duration,
                     "minimize");
             } else if (std::string(minimize_animation) == "zoom")

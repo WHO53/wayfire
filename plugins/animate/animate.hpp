@@ -14,7 +14,6 @@ namespace wf
 {
 namespace animate
 {
-
 enum animation_type
 {
     ANIMATION_TYPE_MAP      = WF_ANIMATE_SHOWING_ANIMATION | WF_ANIMATE_MAP_STATE_ANIMATION,
@@ -35,6 +34,25 @@ class animation_base
     virtual ~animation_base();
 };
 
+struct effect_description_t
+{
+    std::function<std::unique_ptr<animation_base>()> generator;
+    std::string cdata_name;
+};
+
+/**
+ * The effects registry holds a list of all available animation effects.
+ * Plugins can access the effects registry via ref_ptr_t helper in wayfire/plugins/common/shared-core-data.hpp
+ * They may add/remove their own effects.
+ */
+class animate_effects_registry_t
+{
+  public:
+    void register_effect(std::string name, effect_description_t effect);
+    void unregister_effect(std::string name);
+
+    std::map<std::string, effect_description_t> effects;
+};
 }
 }
 
