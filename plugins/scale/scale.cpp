@@ -479,7 +479,7 @@ class wayfire_scale : public wf::per_output_plugin_instance_t,
         if (!view || (last_selected_view != view))
         {
             if(view_to_close && 
-                (drag_start_position.y - input_position.y) > 300.0 && 
+                (drag_start_position.y - input_position.y) > 125.0 && 
                 wf::get_current_time() - drag_start_time < 250){
                 view_to_close->close();
                 view_to_close = nullptr;
