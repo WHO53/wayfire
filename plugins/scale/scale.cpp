@@ -117,6 +117,7 @@ class wayfire_scale : public wf::per_output_plugin_instance_t,
     wf::option_wrapper_t<bool> allow_scale_zoom{"scale/allow_zoom"};
     wf::option_wrapper_t<bool> include_minimized{"scale/include_minimized"};
     wf::option_wrapper_t<bool> close_on_new_view{"scale/close_on_new_view"};
+    bool hideAll = false;
 
     /* maximum scale -- 1.0 means we will not "zoom in" on a view */
     const double max_scale_factor = 1.0;
@@ -281,6 +282,7 @@ class wayfire_scale : public wf::per_output_plugin_instance_t,
         if (active && (all_same_as_current_workspace_views() ||
                        (want_all_workspaces == this->all_workspaces)))
         {
+            hideAll = true;
             deactivate();
             return true;
         }
@@ -468,8 +470,9 @@ class wayfire_scale : public wf::per_output_plugin_instance_t,
             {
                 last_selected_view = nullptr;
                 view_to_close = nullptr;
+                hideAll = true;
+                deactivate();
             }
-
             drag_helper->set_pending_drag(input_position);
             return;
         }
@@ -479,13 +482,28 @@ class wayfire_scale : public wf::per_output_plugin_instance_t,
         if (!view || (last_selected_view != view))
         {
             if(view_to_close && 
-                (drag_start_position.y - input_position.y) > 300.0 && 
-                wf::get_current_time() - drag_start_time < 250){
+                (drag_start_position.y - input_position.y) > 250.0 && 
+                wf::get_current_time() - drag_start_time < 300){
                 view_to_close->close();
                 view_to_close = nullptr;
+            } else if(view_to_close && 
+                (drag_start_position.y - input_position.y) < -250.0 && 
+                wf::get_current_time() - drag_start_time < 300){
+                wf::get_core().default_wm->minimize_request(view_to_close, true);
             }
+
+            hideAll = true;
+            for (auto& view : output->wset()->get_views())
+            {
+                if (!view->minimized)
+                    hideAll = false;
+            }
+
             view_to_close = nullptr;
             last_selected_view = nullptr;
+
+            if(hideAll)
+                deactivate();
             // Operation was cancelled, for ex. dragged outside of the view
             return;
         }
@@ -740,6 +758,7 @@ class wayfire_scale : public wf::per_output_plugin_instance_t,
     {
         return output->wset()->get_views(
             (include_minimized ? 0 : wf::WSET_EXCLUDE_MINIMIZED) | wf::WSET_MAPPED_ONLY);
+                // return output->wset()->get_views(0);
     }
 
     /* Returns a list of views for the current workspace */
@@ -1199,6 +1218,8 @@ class wayfire_scale : public wf::per_output_plugin_instance_t,
     /* Our own refocus that uses untransformed coordinates */
     void refocus()
     {
+        auto views = get_current_workspace_views();
+
         if (current_focus_view)
         {
             wf::get_core().default_wm->focus_raise_view(current_focus_view);
@@ -1208,7 +1229,6 @@ class wayfire_scale : public wf::per_output_plugin_instance_t,
         }
 
         wayfire_toplevel_view next_focus = nullptr;
-        auto views = get_current_workspace_views();
 
         for (auto v : views)
         {
@@ -1313,6 +1333,15 @@ class wayfire_scale : public wf::per_output_plugin_instance_t,
             return false;
         }
 
+        hideAll = false;
+        for (auto& view : output->wset()->get_views())
+        {
+            if (view->minimized)
+            {
+                wf::get_core().default_wm->minimize_request(view, false);
+            }
+        }
+
         if (!output->activate_plugin(&grab_interface))
         {
             return false;
@@ -1382,27 +1411,38 @@ class wayfire_scale : public wf::per_output_plugin_instance_t,
         grab->ungrab_input();
         output->deactivate_plugin(&grab_interface);
 
-        for (auto& e : scale_data)
-        {
-            if (e.first->minimized && (e.first != current_focus_view))
+        if(hideAll){
+            for (auto& view : output->wset()->get_views())
             {
-                e.second.visibility =
-                    view_scale_data::view_visibility_t::HIDING;
-                setup_view_transform(e.second, 1, 1, 0, 0, 0);
-            } else
-            {
-                fade_in(e.first);
-                setup_view_transform(e.second, 1, 1, 0, 0, 1);
-                if (e.second.visibility == view_scale_data::view_visibility_t::HIDDEN)
+                if (!view->minimized)
                 {
-                    wf::scene::set_node_enabled(e.first->get_transformed_node(), true);
+                    wf::get_core().default_wm->minimize_request(view, true);
                 }
-
-                e.second.visibility = view_scale_data::view_visibility_t::VISIBLE;
             }
-        }
+        } else {
+            for (auto& e : scale_data)
+            {
+                if (e.first->minimized && (e.first != current_focus_view))
+                {
+                    e.second.visibility =
+                    view_scale_data::view_visibility_t::HIDING;
+                    setup_view_transform(e.second, 1, 1, 0, 0, 0);
+                } else
+                {
+                    fade_in(e.first);
+                    setup_view_transform(e.second, 1, 1, 0, 0, 1);
+                    if (e.second.visibility == view_scale_data::view_visibility_t::HIDDEN)
+                    {
+                        wf::scene::set_node_enabled(e.first->get_transformed_node(), true);
+                    }
 
-        refocus();
+                    e.second.visibility = view_scale_data::view_visibility_t::VISIBLE;
+                }
+            }
+
+            refocus();
+        }
+        hideAll = false;
         scale_end_signal signal;
         output->emit(&signal);
     }
