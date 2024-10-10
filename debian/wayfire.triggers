@@ -1,0 +1,2 @@
+activate-noawait ldconfig
+# Circumvent lintian: E: wayfire: lacks-ldconfig-trigger usr/lib/*/libwayfire-blur-base.so
