@@ -1,0 +1,3 @@
+usr/include/wayfire/
+usr/lib/*/libwf-config.so
+usr/lib/*/pkgconfig/

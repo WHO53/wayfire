@@ -11,6 +11,7 @@ Build-Depends: dpkg-dev (>= 1.22.5),
  libevdev-dev,
  libfreetype-dev,
  libgl-dev,
+ libglibmm-2.4-dev,
  libglm-dev,
  libinput-dev,
  libjpeg-dev,
@@ -18,7 +19,6 @@ Build-Depends: dpkg-dev (>= 1.22.5),
  libpixman-1-dev,
  libpng-dev,
  libwayland-dev,
- libwf-config-dev (>= 0.9.0),
  libwlroots-dev,
  libxkbcommon-dev,
  libxml2-dev,
@@ -31,6 +31,34 @@ Rules-Requires-Root: no
 Homepage: https://wayfire.org/
 Vcs-Git: https://salsa.debian.org/debian/wayfire.git
 Vcs-Browser: https://salsa.debian.org/debian/wayfire
+
+Package: libwf-config-dev
+Architecture: any
+Multi-Arch: same
+Depends:
+ libevdev-dev,
+ libglm-dev,
+ libwf-config1 (= ${binary:Version}),
+ libxml2-dev,
+ ${misc:Depends},
+Description: Wayfire-specific library for managing config files (dev)
+ Wf-config is a library for managing configuration files, written for
+ wayfire 3D wayland compositor.
+ .
+ This package provides development files.
+
+Package: libwf-config1
+Section: libs
+Architecture: any
+Multi-Arch: same
+Depends:
+ ${misc:Depends},
+ ${shlibs:Depends},
+Description: Wayfire-specific library for managing config files
+ Wf-config is a library for managing configuration files, written for
+ wayfire 3D wayland compositor.
+ .
+ This package provides shared library files.
 
 Package: libwf-touch-dev
 Architecture: any

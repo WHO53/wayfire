@@ -13,12 +13,5 @@ export DEB_BUILD_MAINT_OPTIONS = hardening=+all
 override_dh_auto_configure:
 	dh_auto_configure -- \
 		-Duse_system_wlroots=enabled \
-		-Duse_system_wfconfig=enabled \
+		-Duse_system_wfconfig=disabled \
 		$(NULL)
-
-execute_before_dh_autoreconf:
-	# Prepare subproject source code
-	mkdir subprojects || true
-	cp -r wf-touch subprojects/
-	cp -r wf-utils subprojects/
-
