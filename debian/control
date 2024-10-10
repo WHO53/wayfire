@@ -18,7 +18,7 @@ Build-Depends: dpkg-dev (>= 1.22.5),
  libpixman-1-dev,
  libpng-dev,
  libwayland-dev,
- libwf-config-dev (>= 0.9.0),
+# libwf-config-dev (>= 0.9.0), // not available
  libwlroots-dev,
  libxkbcommon-dev,
  libxml2-dev,
